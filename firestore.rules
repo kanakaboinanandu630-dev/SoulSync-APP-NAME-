@@ -1,0 +1,646 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -------------------------------------------------------------------------
+    // Global Safety Net (Default Deny)
+    // -------------------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Hardened Global Helpers
+    // -------------------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        ('email' in request.auth.token &&
+         request.auth.token.email == 'kanakaboinanandu630@gmail.com' &&
+         request.auth.token.email_verified == true)
+      );
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isValidMemberList(uids, minSize, maxSize) {
+      return uids is list &&
+             uids.size() >= minSize &&
+             uids.size() <= maxSize &&
+             (uids.size() == 0 || uids[0] is string);
+    }
+
+    function coupleDoc(coupleId) {
+      return get(/databases/$(database)/documents/couples/$(coupleId));
+    }
+
+    function isConnectedCoupleMember(coupleId) {
+      return isValidId(coupleId) &&
+             exists(/databases/$(database)/documents/couples/$(coupleId)) &&
+             coupleDoc(coupleId).data.status == 'connected' &&
+             request.auth.uid in coupleDoc(coupleId).data.memberUids;
+    }
+
+    // -------------------------------------------------------------------------
+    // Entity Validation Blueprints (Anti-Update-Gap)
+    // -------------------------------------------------------------------------
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.username is string && data.username.size() >= 1 && data.username.size() <= 40 &&
+             data.publicKeyBase64 is string && data.publicKeyBase64.size() >= 32 && data.publicKeyBase64.size() <= 1024 &&
+             (!('bio' in data) || data.bio == null || (data.bio is string && data.bio.size() <= 200)) &&
+             (!('avatarData' in data) || data.avatarData == null || (data.avatarData is string && data.avatarData.size() <= 150000)) &&
+             (!('birthday' in data) || data.birthday == null || (data.birthday is string && data.birthday.size() <= 32)) &&
+             (!('activeCoupleId' in data) || data.activeCoupleId == null || (data.activeCoupleId is string && data.activeCoupleId.size() <= 128)) &&
+             (!('partnerUid' in data) || data.partnerUid == null || (data.partnerUid is string && data.partnerUid.size() <= 128)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidUserPrivateAccount(data) {
+      return (!('email' in data) || data.email == null || (data.email is string && data.email.size() <= 254)) &&
+             data.themePalette is string && data.themePalette in ['rose_quartz', 'midnight_amethyst', 'velvet_obsidian'] &&
+             data.darkMode is bool &&
+             data.notificationsEnabled is bool &&
+             data.readReceiptsEnabled is bool &&
+             data.typingIndicatorsEnabled is bool &&
+             data.disappearingSeconds is int && data.disappearingSeconds >= 0 && data.disappearingSeconds <= 604800 &&
+             data.pinEnabled is bool &&
+             data.biometricEnabled is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidInviteCode(data) {
+      return data.code is string && data.code.size() >= 6 && data.code.size() <= 16 &&
+             data.coupleId is string && isValidId(data.coupleId) &&
+             data.creatorId is string && data.creatorId.size() >= 1 && data.creatorId.size() <= 128 &&
+             data.creatorName is string && data.creatorName.size() >= 1 && data.creatorName.size() <= 40 &&
+             data.creatorPublicKey is string && data.creatorPublicKey.size() >= 32 && data.creatorPublicKey.size() <= 1024 &&
+             data.redeemed is bool &&
+             (!('redeemedByUid' in data) || data.redeemedByUid == null || (data.redeemedByUid is string && data.redeemedByUid.size() <= 128)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCouple(data) {
+      return data.partnerAId is string && data.partnerAId.size() >= 1 && data.partnerAId.size() <= 128 &&
+             (!('partnerBId' in data) || data.partnerBId == null || (data.partnerBId is string && data.partnerBId.size() <= 128)) &&
+             isValidMemberList(data.memberUids, 1, 2) &&
+             data.inviteCode is string && data.inviteCode.size() >= 6 && data.inviteCode.size() <= 16 &&
+             data.partnerAApproved is bool &&
+             data.partnerBApproved is bool &&
+             data.partnerAPublicKey is string && data.partnerAPublicKey.size() >= 32 && data.partnerAPublicKey.size() <= 1024 &&
+             (!('partnerBPublicKey' in data) || data.partnerBPublicKey == null || (data.partnerBPublicKey is string && data.partnerBPublicKey.size() <= 1024)) &&
+             data.partnerAName is string && data.partnerAName.size() >= 1 && data.partnerAName.size() <= 40 &&
+             (!('partnerBName' in data) || data.partnerBName == null || (data.partnerBName is string && data.partnerBName.size() <= 40)) &&
+             data.status is string && data.status in ['pending_partner', 'pending_approval', 'connected', 'disconnected'] &&
+             (!('anniversaryEpochMs' in data) || data.anniversaryEpochMs == null || (data.anniversaryEpochMs is int && data.anniversaryEpochMs >= 0)) &&
+             (!('partnerABirthday' in data) || data.partnerABirthday == null || (data.partnerABirthday is string && data.partnerABirthday.size() <= 32)) &&
+             (!('partnerBBirthday' in data) || data.partnerBBirthday == null || (data.partnerBBirthday is string && data.partnerBBirthday.size() <= 32)) &&
+             data.disappearingSeconds is int && data.disappearingSeconds >= 0 && data.disappearingSeconds <= 604800 &&
+             (!('typingUid' in data) || data.typingUid == null || (data.typingUid is string && data.typingUid.size() <= 128)) &&
+             (!('disconnectedByUid' in data) || data.disconnectedByUid == null || (data.disconnectedByUid is string && data.disconnectedByUid.size() <= 128)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidConversation(data) {
+      return data.coupleId is string && isValidId(data.coupleId) &&
+             isValidMemberList(data.memberUids, 2, 2) &&
+             (!('lastCiphertext' in data) || data.lastCiphertext == null || (data.lastCiphertext is string && data.lastCiphertext.size() <= 8192)) &&
+             (!('lastIv' in data) || data.lastIv == null || (data.lastIv is string && data.lastIv.size() <= 64)) &&
+             (!('lastMessageType' in data) || data.lastMessageType == null || (data.lastMessageType is string && data.lastMessageType in ['text', 'emoji', 'photo', 'voice', 'file', 'love_note'])) &&
+             (!('lastSenderId' in data) || data.lastSenderId == null || (data.lastSenderId is string && data.lastSenderId.size() <= 128)) &&
+             (!('typingUid' in data) || data.typingUid == null || (data.typingUid is string && data.typingUid.size() <= 128)) &&
+             data.disappearingSeconds is int && data.disappearingSeconds >= 0 && data.disappearingSeconds <= 604800 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidEncryptedMessage(data) {
+      return data.conversationId is string && isValidId(data.conversationId) &&
+             data.coupleId is string && isValidId(data.coupleId) &&
+             isValidMemberList(data.memberUids, 2, 2) &&
+             data.senderId is string && data.senderId.size() >= 1 && data.senderId.size() <= 128 &&
+             data.ciphertextBase64 is string && data.ciphertextBase64.size() >= 1 && data.ciphertextBase64.size() <= 65536 &&
+             data.ivBase64 is string && data.ivBase64.size() >= 8 && data.ivBase64.size() <= 64 &&
+             data.messageType is string && data.messageType in ['text', 'emoji', 'photo', 'voice', 'file', 'love_note'] &&
+             (!('replyToId' in data) || data.replyToId == null || (data.replyToId is string && data.replyToId.size() <= 128)) &&
+             (!('mediaId' in data) || data.mediaId == null || (data.mediaId is string && data.mediaId.size() <= 128)) &&
+             data.forwarded is bool &&
+             data.deliveryStatus is string && data.deliveryStatus in ['sent', 'delivered', 'read'] &&
+             (!('readAtEpochMs' in data) || data.readAtEpochMs == null || (data.readAtEpochMs is int && data.readAtEpochMs >= 0)) &&
+             (!('expiresAtEpochMs' in data) || data.expiresAtEpochMs == null || (data.expiresAtEpochMs is int && data.expiresAtEpochMs >= 0)) &&
+             data.deleted is bool &&
+             (!('keyFingerprint' in data) || data.keyFingerprint == null || (data.keyFingerprint is string && data.keyFingerprint.size() <= 128)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidEncryptedMedia(data) {
+      return data.coupleId is string && isValidId(data.coupleId) &&
+             isValidMemberList(data.memberUids, 2, 2) &&
+             data.uploaderId is string && data.uploaderId.size() >= 1 && data.uploaderId.size() <= 128 &&
+             data.mediaType is string && data.mediaType in ['photo', 'voice', 'memory', 'file'] &&
+             data.ciphertextBase64 is string && data.ciphertextBase64.size() >= 1 && data.ciphertextBase64.size() <= 380000 &&
+             data.ivBase64 is string && data.ivBase64.size() >= 8 && data.ivBase64.size() <= 64 &&
+             (!('captionCiphertext' in data) || data.captionCiphertext == null || (data.captionCiphertext is string && data.captionCiphertext.size() <= 4096)) &&
+             (!('captionIv' in data) || data.captionIv == null || (data.captionIv is string && data.captionIv.size() <= 64)) &&
+             (!('titleCiphertext' in data) || data.titleCiphertext == null || (data.titleCiphertext is string && data.titleCiphertext.size() <= 1024)) &&
+             (!('titleIv' in data) || data.titleIv == null || (data.titleIv is string && data.titleIv.size() <= 64)) &&
+             data.mimeType is string && data.mimeType.size() >= 1 && data.mimeType.size() <= 100 &&
+             data.sizeBytes is int && data.sizeBytes >= 0 && data.sizeBytes <= 500000 &&
+             (!('durationSec' in data) || data.durationSec == null || (data.durationSec is int && data.durationSec >= 0 && data.durationSec <= 600)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCallSession(data) {
+      return data.coupleId is string && isValidId(data.coupleId) &&
+             isValidMemberList(data.memberUids, 2, 2) &&
+             data.callerId is string && data.callerId.size() >= 1 && data.callerId.size() <= 128 &&
+             data.calleeId is string && data.calleeId.size() >= 1 && data.calleeId.size() <= 128 &&
+             data.callType is string && data.callType in ['audio', 'video'] &&
+             data.status is string && data.status in ['ringing', 'active', 'ended', 'declined', 'missed'] &&
+             (!('offerSdp' in data) || data.offerSdp == null || (data.offerSdp is string && data.offerSdp.size() <= 16384)) &&
+             (!('answerSdp' in data) || data.answerSdp == null || (data.answerSdp is string && data.answerSdp.size() <= 16384)) &&
+             data.mutedByCaller is bool &&
+             data.mutedByCallee is bool &&
+             (!('startedAtEpochMs' in data) || data.startedAtEpochMs == null || (data.startedAtEpochMs is int && data.startedAtEpochMs >= 0)) &&
+             (!('endedAtEpochMs' in data) || data.endedAtEpochMs == null || (data.endedAtEpochMs is int && data.endedAtEpochMs >= 0)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidLoveNote(data) {
+      return data.coupleId is string && isValidId(data.coupleId) &&
+             isValidMemberList(data.memberUids, 2, 2) &&
+             data.authorId is string && data.authorId.size() >= 1 && data.authorId.size() <= 128 &&
+             data.ciphertextBase64 is string && data.ciphertextBase64.size() >= 1 && data.ciphertextBase64.size() <= 8192 &&
+             data.ivBase64 is string && data.ivBase64.size() >= 8 && data.ivBase64.size() <= 64 &&
+             data.mood is string && data.mood in ['adore', 'grateful', 'miss_you', 'promise', 'celebrate'] &&
+             data.pinned is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCoupleNotification(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.senderId is string && data.senderId.size() >= 1 && data.senderId.size() <= 128 &&
+             data.coupleId is string && isValidId(data.coupleId) &&
+             isValidMemberList(data.memberUids, 1, 2) &&
+             data.type is string && data.type in ['invite', 'approval', 'love_note', 'anniversary', 'birthday', 'call', 'system'] &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.body is string && data.body.size() >= 1 && data.body.size() <= 300 &&
+             data.read is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidAbuseReport(data) {
+      return data.reporterId is string && data.reporterId.size() >= 1 && data.reporterId.size() <= 128 &&
+             data.reportedUserId is string && data.reportedUserId.size() >= 1 && data.reportedUserId.size() <= 128 &&
+             (!('coupleId' in data) || data.coupleId == null || (data.coupleId is string && data.coupleId.size() <= 128)) &&
+             data.category is string && data.category in ['harassment', 'impersonation', 'spam', 'safety', 'other'] &&
+             data.details is string && data.details.size() >= 1 && data.details.size() <= 2000 &&
+             data.status is string && data.status in ['submitted', 'reviewed', 'resolved'] &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    // -------------------------------------------------------------------------
+    // 1. Admins (Server-Managed RBAC)
+    // -------------------------------------------------------------------------
+    match /admins/{adminId} {
+      allow get: if isSignedIn() && isValidId(adminId) && (request.auth.uid == adminId || isAdmin());
+      allow list, create, update, delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. Users & Split-Collection Private PII Account
+    // -------------------------------------------------------------------------
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (
+        request.auth.uid == userId ||
+        existing().partnerUid == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'username', 'publicKeyBase64', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'username', 'bio', 'avatarData', 'birthday', 'publicKeyBase64', 'activeCoupleId', 'partnerUid', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['username', 'bio', 'avatarData', 'birthday', 'publicKeyBase64', 'activeCoupleId', 'partnerUid', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+
+      // Strictly Owner-Only PII & Preferences
+      match /private/{docId} {
+        allow get: if isOwner(userId) && isValidId(docId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(docId) &&
+                         incoming().keys().hasAll(['themePalette', 'darkMode', 'notificationsEnabled', 'readReceiptsEnabled', 'typingIndicatorsEnabled', 'disappearingSeconds', 'pinEnabled', 'biometricEnabled', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['email', 'themePalette', 'darkMode', 'notificationsEnabled', 'readReceiptsEnabled', 'typingIndicatorsEnabled', 'disappearingSeconds', 'pinEnabled', 'biometricEnabled', 'createdAt', 'updatedAt']) &&
+                         isValidUserPrivateAccount(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(docId) &&
+                         isValidUserPrivateAccount(incoming()) &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['email', 'themePalette', 'darkMode', 'notificationsEnabled', 'readReceiptsEnabled', 'typingIndicatorsEnabled', 'disappearingSeconds', 'pinEnabled', 'biometricEnabled', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(docId);
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. InviteCodes (Unlistable Secret Code Lookup)
+    // -------------------------------------------------------------------------
+    match /inviteCodes/{code} {
+      allow get: if isSignedIn() && isValidId(code);
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+                       isValidId(code) &&
+                       incoming().code == code &&
+                       incoming().creatorId == request.auth.uid &&
+                       incoming().redeemed == false &&
+                       incoming().keys().hasAll(['code', 'coupleId', 'creatorId', 'creatorName', 'creatorPublicKey', 'redeemed', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['code', 'coupleId', 'creatorId', 'creatorName', 'creatorPublicKey', 'redeemed', 'createdAt', 'updatedAt']) &&
+                       isValidInviteCode(incoming()) &&
+                       exists(/databases/$(database)/documents/couples/$(incoming().coupleId));
+
+      allow update: if isSignedIn() &&
+                       isValidId(code) &&
+                       isValidInviteCode(incoming()) &&
+                       existing().redeemed == false &&
+                       incoming().code == existing().code &&
+                       incoming().coupleId == existing().coupleId &&
+                       incoming().creatorId == existing().creatorId &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         // Action: Partner redeems code
+                         (existing().creatorId != request.auth.uid &&
+                          incoming().redeemed == true &&
+                          incoming().redeemedByUid == request.auth.uid &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['redeemed', 'redeemedByUid', 'updatedAt'])) ||
+                         // Action: Creator revokes code
+                         (existing().creatorId == request.auth.uid &&
+                          incoming().redeemed == true &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['redeemed', 'updatedAt']))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(code) && (existing().creatorId == request.auth.uid || isAdmin());
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. Couples (Private 1-to-1 Bond with Dual Approval & Terminal Disconnect)
+    // -------------------------------------------------------------------------
+    match /couples/{coupleId} {
+      allow get: if isSignedIn() && isValidId(coupleId) && (
+        request.auth.uid in existing().memberUids ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        request.auth.uid in resource.data.memberUids ||
+        isAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(coupleId) &&
+                       incoming().partnerAId == request.auth.uid &&
+                       incoming().memberUids.size() == 1 &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().status == 'pending_partner' &&
+                       incoming().partnerAApproved == false &&
+                       incoming().partnerBApproved == false &&
+                       incoming().keys().hasAll(['partnerAId', 'memberUids', 'inviteCode', 'partnerAApproved', 'partnerBApproved', 'partnerAPublicKey', 'partnerAName', 'status', 'disappearingSeconds', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['partnerAId', 'memberUids', 'inviteCode', 'partnerAApproved', 'partnerBApproved', 'partnerAPublicKey', 'partnerAName', 'status', 'anniversaryEpochMs', 'partnerABirthday', 'disappearingSeconds', 'createdAt', 'updatedAt']) &&
+                       isValidCouple(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(coupleId) &&
+                       isValidCouple(incoming()) &&
+                       incoming().partnerAId == existing().partnerAId &&
+                       incoming().inviteCode == existing().inviteCode &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         isAdmin() ||
+                         (
+                           existing().status != 'disconnected' &&
+                           (
+                             // Action 1: Partner B joins via invite code -> pending_approval
+                             (existing().status == 'pending_partner' &&
+                              existing().partnerAId != request.auth.uid &&
+                              incoming().partnerBId == request.auth.uid &&
+                              incoming().partnerBApproved == true &&
+                              incoming().partnerAApproved == false &&
+                              incoming().status == 'pending_approval' &&
+                              incoming().memberUids.size() == 2 &&
+                              existing().partnerAId in incoming().memberUids &&
+                              request.auth.uid in incoming().memberUids &&
+                              incoming().diff(existing()).affectedKeys().hasOnly(['partnerBId', 'partnerBName', 'partnerBPublicKey', 'memberUids', 'partnerBApproved', 'status', 'updatedAt'])) ||
+
+                             // Action 2: Partner A approves -> connected (dual approval completed)
+                             (existing().status == 'pending_approval' &&
+                              request.auth.uid == existing().partnerAId &&
+                              existing().partnerBApproved == true &&
+                              incoming().partnerAApproved == true &&
+                              incoming().status == 'connected' &&
+                              incoming().memberUids == existing().memberUids &&
+                              incoming().diff(existing()).affectedKeys().hasOnly(['partnerAApproved', 'status', 'updatedAt'])) ||
+
+                             // Action 3: Connected members update couple metadata / milestones / typing
+                             (existing().status == 'connected' &&
+                              request.auth.uid in existing().memberUids &&
+                              incoming().memberUids == existing().memberUids &&
+                              incoming().status == 'connected' &&
+                              incoming().diff(existing()).affectedKeys().hasOnly(['anniversaryEpochMs', 'partnerABirthday', 'partnerBBirthday', 'disappearingSeconds', 'typingUid', 'partnerAName', 'partnerBName', 'partnerAPublicKey', 'partnerBPublicKey', 'updatedAt'])) ||
+
+                             // Action 4: Partner A updates anniversary/birthday before pairing finishes
+                             (existing().status == 'pending_partner' &&
+                              request.auth.uid == existing().partnerAId &&
+                              incoming().memberUids == existing().memberUids &&
+                              incoming().status == 'pending_partner' &&
+                              incoming().diff(existing()).affectedKeys().hasOnly(['anniversaryEpochMs', 'partnerABirthday', 'disappearingSeconds', 'partnerAName', 'updatedAt'])) ||
+
+                             // Action 5: Secure Disconnection (Terminal State)
+                             (request.auth.uid in existing().memberUids &&
+                              incoming().memberUids == existing().memberUids &&
+                              incoming().status == 'disconnected' &&
+                              incoming().disconnectedByUid == request.auth.uid &&
+                              incoming().diff(existing()).affectedKeys().hasOnly(['status', 'disconnectedByUid', 'updatedAt']))
+                           )
+                         )
+                       );
+
+      allow delete: if isSignedIn() && isValidId(coupleId) && (
+        (existing().status == 'pending_partner' && existing().partnerAId == request.auth.uid) ||
+        isAdmin()
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // 5. Conversations (Strict Connected Couple Access Only)
+    // -------------------------------------------------------------------------
+    match /conversations/{conversationId} {
+      allow get: if isSignedIn() && isValidId(conversationId) && request.auth.uid in existing().memberUids;
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+      allow create: if isSignedIn() &&
+                       isValidId(conversationId) &&
+                       incoming().coupleId == conversationId &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().keys().hasAll(['coupleId', 'memberUids', 'disappearingSeconds', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['coupleId', 'memberUids', 'lastCiphertext', 'lastIv', 'lastMessageType', 'lastSenderId', 'typingUid', 'disappearingSeconds', 'createdAt', 'updatedAt']) &&
+                       isValidConversation(incoming()) &&
+                       isConnectedCoupleMember(incoming().coupleId);
+
+      allow update: if isSignedIn() &&
+                       isValidId(conversationId) &&
+                       isValidConversation(incoming()) &&
+                       request.auth.uid in existing().memberUids &&
+                       incoming().coupleId == existing().coupleId &&
+                       incoming().memberUids == existing().memberUids &&
+                       incoming().createdAt == existing().createdAt &&
+                       isConnectedCoupleMember(existing().coupleId) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['lastCiphertext', 'lastIv', 'lastMessageType', 'lastSenderId', 'typingUid', 'disappearingSeconds', 'updatedAt']);
+
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // 6. EncryptedMessages (Zero Plaintext, Connected Partners Only)
+    // -------------------------------------------------------------------------
+    match /encryptedMessages/{messageId} {
+      allow get: if isSignedIn() && isValidId(messageId) && request.auth.uid in existing().memberUids;
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+      allow create: if isSignedIn() &&
+                       isValidId(messageId) &&
+                       incoming().senderId == request.auth.uid &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().deleted == false &&
+                       incoming().keys().hasAll(['conversationId', 'coupleId', 'memberUids', 'senderId', 'ciphertextBase64', 'ivBase64', 'messageType', 'forwarded', 'deliveryStatus', 'deleted', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['conversationId', 'coupleId', 'memberUids', 'senderId', 'ciphertextBase64', 'ivBase64', 'messageType', 'replyToId', 'mediaId', 'forwarded', 'deliveryStatus', 'readAtEpochMs', 'expiresAtEpochMs', 'deleted', 'keyFingerprint', 'createdAt', 'updatedAt']) &&
+                       isValidEncryptedMessage(incoming()) &&
+                       isConnectedCoupleMember(incoming().coupleId);
+
+      allow update: if isSignedIn() &&
+                       isValidId(messageId) &&
+                       isValidEncryptedMessage(incoming()) &&
+                       request.auth.uid in existing().memberUids &&
+                       incoming().conversationId == existing().conversationId &&
+                       incoming().coupleId == existing().coupleId &&
+                       incoming().memberUids == existing().memberUids &&
+                       incoming().senderId == existing().senderId &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         // Action 1: Partner marks delivery / read receipt
+                         (request.auth.uid != existing().senderId &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['deliveryStatus', 'readAtEpochMs', 'updatedAt'])) ||
+                         // Action 2: Sender deletes message for everyone
+                         (request.auth.uid == existing().senderId &&
+                          incoming().deleted == true &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['deleted', 'ciphertextBase64', 'ivBase64', 'updatedAt']))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(messageId) && request.auth.uid == existing().senderId;
+    }
+
+    // -------------------------------------------------------------------------
+    // 7. Media (Encrypted Shared Photos, Voice Notes, Memories, Files)
+    // -------------------------------------------------------------------------
+    match /media/{mediaId} {
+      allow get: if isSignedIn() && isValidId(mediaId) && request.auth.uid in existing().memberUids;
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+      allow create: if isSignedIn() &&
+                       isValidId(mediaId) &&
+                       incoming().uploaderId == request.auth.uid &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().keys().hasAll(['coupleId', 'memberUids', 'uploaderId', 'mediaType', 'ciphertextBase64', 'ivBase64', 'mimeType', 'sizeBytes', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['coupleId', 'memberUids', 'uploaderId', 'mediaType', 'ciphertextBase64', 'ivBase64', 'captionCiphertext', 'captionIv', 'titleCiphertext', 'titleIv', 'mimeType', 'sizeBytes', 'durationSec', 'createdAt', 'updatedAt']) &&
+                       isValidEncryptedMedia(incoming()) &&
+                       isConnectedCoupleMember(incoming().coupleId);
+
+      allow update: if false;
+      allow delete: if isSignedIn() && isValidId(mediaId) && request.auth.uid == existing().uploaderId;
+    }
+
+    // -------------------------------------------------------------------------
+    // 8. Calls (Private WebRTC Audio/Video Signaling + Terminal Lock)
+    // -------------------------------------------------------------------------
+    match /calls/{callId} {
+      allow get: if isSignedIn() && isValidId(callId) && request.auth.uid in existing().memberUids;
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+      allow create: if isSignedIn() &&
+                       isValidId(callId) &&
+                       incoming().callerId == request.auth.uid &&
+                       incoming().calleeId != request.auth.uid &&
+                       incoming().status == 'ringing' &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().calleeId in incoming().memberUids &&
+                       incoming().keys().hasAll(['coupleId', 'memberUids', 'callerId', 'calleeId', 'callType', 'status', 'mutedByCaller', 'mutedByCallee', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['coupleId', 'memberUids', 'callerId', 'calleeId', 'callType', 'status', 'offerSdp', 'answerSdp', 'mutedByCaller', 'mutedByCallee', 'startedAtEpochMs', 'endedAtEpochMs', 'createdAt', 'updatedAt']) &&
+                       isValidCallSession(incoming()) &&
+                       isConnectedCoupleMember(incoming().coupleId);
+
+      allow update: if isSignedIn() &&
+                       isValidId(callId) &&
+                       isValidCallSession(incoming()) &&
+                       request.auth.uid in existing().memberUids &&
+                       incoming().coupleId == existing().coupleId &&
+                       incoming().memberUids == existing().memberUids &&
+                       incoming().callerId == existing().callerId &&
+                       incoming().calleeId == existing().calleeId &&
+                       incoming().callType == existing().callType &&
+                       incoming().createdAt == existing().createdAt &&
+                       !(existing().status in ['ended', 'declined', 'missed']) &&
+                       (
+                         // Action 1: Callee answers call
+                         (request.auth.uid == existing().calleeId &&
+                          existing().status == 'ringing' &&
+                          incoming().status == 'active' &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'answerSdp', 'startedAtEpochMs', 'updatedAt'])) ||
+                         // Action 2: Either partner ends, declines, or misses call (terminal)
+                         (incoming().status in ['ended', 'declined', 'missed'] &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'endedAtEpochMs', 'updatedAt'])) ||
+                         // Action 3: Mute / SDP update during ringing or active call
+                         (incoming().status == existing().status &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['mutedByCaller', 'mutedByCallee', 'offerSdp', 'answerSdp', 'updatedAt']))
+                       );
+
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // 9. LoveNotes (Encrypted Romantic Notes)
+    // -------------------------------------------------------------------------
+    match /loveNotes/{noteId} {
+      allow get: if isSignedIn() && isValidId(noteId) && request.auth.uid in existing().memberUids;
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+
+      allow create: if isSignedIn() &&
+                       isValidId(noteId) &&
+                       incoming().authorId == request.auth.uid &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().keys().hasAll(['coupleId', 'memberUids', 'authorId', 'ciphertextBase64', 'ivBase64', 'mood', 'pinned', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['coupleId', 'memberUids', 'authorId', 'ciphertextBase64', 'ivBase64', 'mood', 'pinned', 'createdAt', 'updatedAt']) &&
+                       isValidLoveNote(incoming()) &&
+                       isConnectedCoupleMember(incoming().coupleId);
+
+      allow update: if isSignedIn() &&
+                       isValidId(noteId) &&
+                       isValidLoveNote(incoming()) &&
+                       request.auth.uid in existing().memberUids &&
+                       incoming().coupleId == existing().coupleId &&
+                       incoming().memberUids == existing().memberUids &&
+                       incoming().authorId == existing().authorId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['pinned', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(noteId) && request.auth.uid == existing().authorId;
+    }
+
+    // -------------------------------------------------------------------------
+    // 10. Notifications (Recipient-Scoped Couple Alerts)
+    // -------------------------------------------------------------------------
+    match /notifications/{notificationId} {
+      allow get: if isSignedIn() && isValidId(notificationId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(notificationId) &&
+                       incoming().senderId == request.auth.uid &&
+                       request.auth.uid in incoming().memberUids &&
+                       incoming().userId in incoming().memberUids &&
+                       incoming().read == false &&
+                       incoming().keys().hasAll(['userId', 'senderId', 'coupleId', 'memberUids', 'type', 'title', 'body', 'read', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'senderId', 'coupleId', 'memberUids', 'type', 'title', 'body', 'read', 'createdAt', 'updatedAt']) &&
+                       isValidCoupleNotification(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(notificationId) &&
+                       isValidCoupleNotification(incoming()) &&
+                       existing().userId == request.auth.uid &&
+                       incoming().userId == existing().userId &&
+                       incoming().senderId == existing().senderId &&
+                       incoming().coupleId == existing().coupleId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().read == true &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['read', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(notificationId) && existing().userId == request.auth.uid;
+    }
+
+    // -------------------------------------------------------------------------
+    // 11. Reports (Abuse & Safety Moderation)
+    // -------------------------------------------------------------------------
+    match /reports/{reportId} {
+      allow get: if isSignedIn() && isValidId(reportId) && (
+        existing().reporterId == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.reporterId == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(reportId) &&
+                       incoming().reporterId == request.auth.uid &&
+                       incoming().status == 'submitted' &&
+                       incoming().keys().hasAll(['reporterId', 'reportedUserId', 'category', 'details', 'status', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['reporterId', 'reportedUserId', 'coupleId', 'category', 'details', 'status', 'createdAt', 'updatedAt']) &&
+                       isValidAbuseReport(incoming());
+
+      allow update: if isAdmin() &&
+                       isValidId(reportId) &&
+                       isValidAbuseReport(incoming()) &&
+                       incoming().reporterId == existing().reporterId &&
+                       incoming().reportedUserId == existing().reportedUserId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+
+      allow delete: if isAdmin() && isValidId(reportId);
+    }
+  }
+}

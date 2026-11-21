@@ -1,0 +1,270 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public-safe couple profile and E2EE public key metadata for a Forever Us user. PII is isolated in users/{userId}/private.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the user." },
+        "username": { "type": "string", "description": "Display name chosen by the user (1-40 chars)." },
+        "bio": { "type": "string", "description": "Optional short romantic status or bio (<= 200 chars)." },
+        "avatarData": { "type": "string", "description": "Optional compact Base64 thumbnail avatar (<= 150000 chars)." },
+        "birthday": { "type": "string", "description": "Optional ISO date YYYY-MM-DD for birthday reminders." },
+        "publicKeyBase64": { "type": "string", "description": "Base64-encoded X.509 ECDH P-256 public key for end-to-end encryption." },
+        "activeCoupleId": { "type": "string", "description": "Active couple document ID if paired or pending." },
+        "partnerUid": { "type": "string", "description": "Connected partner UID for mutual profile read access." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." }
+      },
+      "required": ["userId", "username", "publicKeyBase64", "createdAt", "updatedAt"]
+    },
+    "UserPrivateAccount": {
+      "title": "UserPrivateAccount",
+      "description": "Owner-only PII and privacy/theme preferences strictly isolated from all other users.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "description": "Verified account email address." },
+        "themePalette": { "type": "string", "enum": ["rose_quartz", "midnight_amethyst", "velvet_obsidian"] },
+        "darkMode": { "type": "boolean" },
+        "notificationsEnabled": { "type": "boolean" },
+        "readReceiptsEnabled": { "type": "boolean" },
+        "typingIndicatorsEnabled": { "type": "boolean" },
+        "disappearingSeconds": { "type": "integer" },
+        "pinEnabled": { "type": "boolean" },
+        "biometricEnabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." }
+      },
+      "required": ["themePalette", "darkMode", "notificationsEnabled", "readReceiptsEnabled", "typingIndicatorsEnabled", "disappearingSeconds", "pinEnabled", "biometricEnabled", "createdAt", "updatedAt"]
+    },
+    "InviteCode": {
+      "title": "InviteCode",
+      "description": "Single-use secret 8-character invitation code linking a partner to a pending couple bond. Unlistable.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "coupleId": { "type": "string" },
+        "creatorId": { "type": "string" },
+        "creatorName": { "type": "string" },
+        "creatorPublicKey": { "type": "string" },
+        "redeemed": { "type": "boolean" },
+        "redeemedByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." }
+      },
+      "required": ["code", "coupleId", "creatorId", "creatorName", "creatorPublicKey", "redeemed", "createdAt", "updatedAt"]
+    },
+    "Couple": {
+      "title": "Couple",
+      "description": "Private 1-to-1 couple relationship requiring dual approval before encrypted messaging unlocks.",
+      "type": "object",
+      "properties": {
+        "partnerAId": { "type": "string" },
+        "partnerBId": { "type": "string" },
+        "memberUids": { "type": "array", "description": "Bounded list of 1-2 member UIDs." },
+        "inviteCode": { "type": "string" },
+        "partnerAApproved": { "type": "boolean" },
+        "partnerBApproved": { "type": "boolean" },
+        "partnerAPublicKey": { "type": "string" },
+        "partnerBPublicKey": { "type": "string" },
+        "partnerAName": { "type": "string" },
+        "partnerBName": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending_partner", "pending_approval", "connected", "disconnected"] },
+        "anniversaryEpochMs": { "type": "integer" },
+        "partnerABirthday": { "type": "string" },
+        "partnerBBirthday": { "type": "string" },
+        "disappearingSeconds": { "type": "integer" },
+        "typingUid": { "type": "string" },
+        "disconnectedByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." }
+      },
+      "required": ["partnerAId", "memberUids", "inviteCode", "partnerAApproved", "partnerBApproved", "partnerAPublicKey", "partnerAName", "status", "disappearingSeconds", "createdAt", "updatedAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Encrypted conversation metadata strictly scoped to the two connected partners.",
+      "type": "object",
+      "properties": {
+        "coupleId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "lastCiphertext": { "type": "string" },
+        "lastIv": { "type": "string" },
+        "lastMessageType": { "type": "string", "enum": ["text", "emoji", "photo", "voice", "file", "love_note"] },
+        "lastSenderId": { "type": "string" },
+        "typingUid": { "type": "string" },
+        "disappearingSeconds": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." }
+      },
+      "required": ["coupleId", "memberUids", "disappearingSeconds", "createdAt", "updatedAt"]
+    },
+    "EncryptedMessage": {
+      "title": "EncryptedMessage",
+      "description": "End-to-end AES-256-GCM encrypted message payload. Plaintext is never written to Firestore.",
+      "type": "object",
+      "properties": {
+        "conversationId": { "type": "string" },
+        "coupleId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "senderId": { "type": "string" },
+        "ciphertextBase64": { "type": "string" },
+        "ivBase64": { "type": "string" },
+        "messageType": { "type": "string", "enum": ["text", "emoji", "photo", "voice", "file", "love_note"] },
+        "replyToId": { "type": "string" },
+        "mediaId": { "type": "string" },
+        "forwarded": { "type": "boolean" },
+        "deliveryStatus": { "type": "string", "enum": ["sent", "delivered", "read"] },
+        "readAtEpochMs": { "type": "integer" },
+        "expiresAtEpochMs": { "type": "integer" },
+        "deleted": { "type": "boolean" },
+        "keyFingerprint": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." }
+      },
+      "required": ["conversationId", "coupleId", "memberUids", "senderId", "ciphertextBase64", "ivBase64", "messageType", "forwarded", "deliveryStatus", "deleted", "createdAt", "updatedAt"]
+    },
+    "EncryptedMedia": {
+      "title": "EncryptedMedia",
+      "description": "End-to-end encrypted shared photo, voice clip, memory, or file blob for the private couple gallery.",
+      "type": "object",
+      "properties": {
+        "coupleId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "uploaderId": { "type": "string" },
+        "mediaType": { "type": "string", "enum": ["photo", "voice", "memory", "file"] },
+        "ciphertextBase64": { "type": "string" },
+        "ivBase64": { "type": "string" },
+        "captionCiphertext": { "type": "string" },
+        "captionIv": { "type": "string" },
+        "titleCiphertext": { "type": "string" },
+        "titleIv": { "type": "string" },
+        "mimeType": { "type": "string" },
+        "sizeBytes": { "type": "integer" },
+        "durationSec": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." }
+      },
+      "required": ["coupleId", "memberUids", "uploaderId", "mediaType", "ciphertextBase64", "ivBase64", "mimeType", "sizeBytes", "createdAt", "updatedAt"]
+    },
+    "CallSession": {
+      "title": "CallSession",
+      "description": "Private 1-to-1 audio and video WebRTC call signaling session with terminal state locking.",
+      "type": "object",
+      "properties": {
+        "coupleId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "callerId": { "type": "string" },
+        "calleeId": { "type": "string" },
+        "callType": { "type": "string", "enum": ["audio", "video"] },
+        "status": { "type": "string", "enum": ["ringing", "active", "ended", "declined", "missed"] },
+        "offerSdp": { "type": "string" },
+        "answerSdp": { "type": "string" },
+        "mutedByCaller": { "type": "boolean" },
+        "mutedByCallee": { "type": "boolean" },
+        "startedAtEpochMs": { "type": "integer" },
+        "endedAtEpochMs": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." }
+      },
+      "required": ["coupleId", "memberUids", "callerId", "calleeId", "callType", "status", "mutedByCaller", "mutedByCallee", "createdAt", "updatedAt"]
+    },
+    "LoveNote": {
+      "title": "LoveNote",
+      "description": "End-to-end encrypted romantic note shared between connected partners.",
+      "type": "object",
+      "properties": {
+        "coupleId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "authorId": { "type": "string" },
+        "ciphertextBase64": { "type": "string" },
+        "ivBase64": { "type": "string" },
+        "mood": { "type": "string", "enum": ["adore", "grateful", "miss_you", "promise", "celebrate"] },
+        "pinned": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." }
+      },
+      "required": ["coupleId", "memberUids", "authorId", "ciphertextBase64", "ivBase64", "mood", "pinned", "createdAt", "updatedAt"]
+    },
+    "CoupleNotification": {
+      "title": "CoupleNotification",
+      "description": "Private in-app couple notification for invites, approvals, calls, love notes, and milestones.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "coupleId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "type": { "type": "string", "enum": ["invite", "approval", "love_note", "anniversary", "birthday", "call", "system"] },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." }
+      },
+      "required": ["userId", "senderId", "coupleId", "memberUids", "type", "title", "body", "read", "createdAt", "updatedAt"]
+    },
+    "AbuseReport": {
+      "title": "AbuseReport",
+      "description": "User safety and abuse report for administrative moderation.",
+      "type": "object",
+      "properties": {
+        "reporterId": { "type": "string" },
+        "reportedUserId": { "type": "string" },
+        "coupleId": { "type": "string" },
+        "category": { "type": "string", "enum": ["harassment", "impersonation", "spam", "safety", "other"] },
+        "details": { "type": "string" },
+        "status": { "type": "string", "enum": ["submitted", "reviewed", "resolved"] },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp via FieldValue.serverTimestamp()." }
+      },
+      "required": ["reporterId", "reportedUserId", "category", "details", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profiles and ECDH public keys (no PII)."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateAccount" },
+      "description": "Owner-only PII and privacy/theme settings."
+    },
+    "/inviteCodes/{code}": {
+      "schema": { "$ref": "#/entities/InviteCode" },
+      "description": "Single-use partner invitation codes (get-only, unlistable)."
+    },
+    "/couples/{coupleId}": {
+      "schema": { "$ref": "#/entities/Couple" },
+      "description": "Private 1-to-1 couple connections with dual approval."
+    },
+    "/conversations/{conversationId}": {
+      "schema": { "$ref": "#/entities/Conversation" },
+      "description": "Private 1-to-1 encrypted conversation metadata."
+    },
+    "/encryptedMessages/{messageId}": {
+      "schema": { "$ref": "#/entities/EncryptedMessage" },
+      "description": "End-to-end encrypted chat messages (never plaintext)."
+    },
+    "/media/{mediaId}": {
+      "schema": { "$ref": "#/entities/EncryptedMedia" },
+      "description": "End-to-end encrypted shared photos, voice notes, memories, and files."
+    },
+    "/calls/{callId}": {
+      "schema": { "$ref": "#/entities/CallSession" },
+      "description": "Private WebRTC audio and video call signaling."
+    },
+    "/loveNotes/{noteId}": {
+      "schema": { "$ref": "#/entities/LoveNote" },
+      "description": "End-to-end encrypted couple love notes."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/CoupleNotification" },
+      "description": "User-scoped notifications and milestone reminders."
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/AbuseReport" },
+      "description": "Abuse and safety reports for admin review."
+    }
+  }
+}

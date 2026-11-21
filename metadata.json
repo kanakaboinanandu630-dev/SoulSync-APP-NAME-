@@ -1,0 +1,6 @@
+{
+  "name": "SoulSync",
+  "description": "Private end-to-end encrypted couples messaging app with real-time chat, shared memories, love notes, milestones, and call signaling.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
